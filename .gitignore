@@ -1,0 +1,55 @@
+# Secrets and env
+.env
+.env.local
+*.pem
+*.key
+service-account-*.json
+gcp-credentials.json
+
+# Data — NEVER commit MIMIC or any PHI
+data/raw/
+data/processed/
+*.csv
+*.parquet
+*.feather
+!data/schemas/*.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+.venv/
+venv/
+*.egg
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+*.tfvars
+!*.tfvars.example
+
+# MLflow
+mlruns/
+mlartifacts/
+
+# Docker
+.dockerignore
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Build artifacts
+build/
+dist/
+*.tar.gz
