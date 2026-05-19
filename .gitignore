@@ -6,9 +6,11 @@
 service-account-*.json
 gcp-credentials.json
 
-# Data — NEVER commit MIMIC or any PHI
+# Data — NEVER commit raw data, PHI, or synthetic output
 data/raw/
 data/processed/
+data/synthea/output/
+data/synthea/*.jar
 *.csv
 *.parquet
 *.feather
