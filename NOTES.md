@@ -26,6 +26,23 @@ Each entry: date, what happened, why it matters.
 3. Budget alerts email; they don't cap spend. Discipline is reacting to alerts.
 
 ---
+---
+
+## 2026-05-18 — Day 1 evening: Pivoted from MIMIC-IV to Synthea synthetic data
+
+**What:** Started CITI registration for PhysioNet credentialed access to MIMIC-IV, discovered the Independent Learner path costs ~$165 (CITI Data or Specimens Only Research course + HIPAA module). Pivoted to using Synthea (MITRE's open-source synthetic patient generator) instead.
+
+**Why this is actually a better decision for the project:**
+1. **Time to first data: minutes, not 10 days.** Synthea runs locally, generates as many patients as you want, ships with ICD-10 codes.
+2. **No PHI handling risk.** The repo can be fully public from day one. Notebooks, EDA outputs, sample predictions — all safe to commit.
+3. **Stronger data-governance story for interviews.** "I designed the system to use synthetic data so the public repo doesn't touch PHI, with a swap-in path to real EHR data via a config change." That's a more sophisticated narrative than "I worked with MIMIC."
+4. **Cost goes to compute, not credentialing.** $165 reallocated to Vertex AI training jobs.
+
+**Trade-offs accepted:**
+- Synthea generates structured encounter data, not free-text notes. We'll synthesize notes from the structured data using an LLM. This becomes its own interesting subsystem (and a great section of the blog post on "how to bootstrap clinical NLP without real notes").
+- "Trained on MIMIC" looks better on a resume to clinical-ML hiring managers than "trained on Synthea." Trade I'm willing to make for time-to-shipped.
+
+**System design implication:** Build the data ingestion layer with a clean abstraction so MIMIC-IV can be swapped in later without changing training code.
 
 ## Decision log
 
