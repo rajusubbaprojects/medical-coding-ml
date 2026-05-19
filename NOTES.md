@@ -85,3 +85,20 @@ Things I didn't expect — also gold.
 - Production-style MLOps inverts the typical learning order. Usually you start with a notebook, train a model, then think about serving. With a stub Predictor returning hardcoded codes, the API can be live on day one and the model swaps in later. The platform is the product; the model is just a swappable component.
 
 **Started CITI training in parallel during day-1 setup.** Critical path: PhysioNet approval is 3-10 days; can't start data work until then. Working on infrastructure while waiting.
+
+
+---
+
+## 2026-05-19 — Day 2: Infrastructure live
+
+**What:** `terraform apply` created 34 resources cleanly: 11 API enablements, 3 service accounts (training/serving/GitHub Actions), 13 IAM bindings, 2 GCS buckets, 1 BigQuery dataset, 1 Artifact Registry repo, 1 Workload Identity Pool, 1 provider, 1 WIF binding.
+
+**Why it matters:** The platform exists. From here, every piece of code I write has a real place to run. The project is no longer "files in git" — it's a system with cloud presence.
+
+**Workload Identity Federation worked first try.** No JSON service account keys stored anywhere. The OIDC trust between this repo and GCP is established by Terraform; auth at deploy time is short-lived tokens. This is the modern standard and a strong interview talking point.
+
+**Lessons:**
+- `terraform plan` showed exactly 34 resources matching my mental model — no surprises is a good sign. When plan shows resources you didn't expect, your code disagrees with your intent.
+- The `for_each` pattern over a list of roles makes IAM bindings dense and readable. Adding a permission is one line in a list.
+- Lock file (`.terraform.lock.hcl`) committed for reproducibility — anyone else who clones the repo will pin to provider v5.45.2 the same way I am.
+- Updated `.gitignore` to allow committing `.terraform.lock.hcl` — industry practice moved toward committing this file for reproducibility.
