@@ -102,3 +102,8 @@ Things I didn't expect — also gold.
 - The `for_each` pattern over a list of roles makes IAM bindings dense and readable. Adding a permission is one line in a list.
 - Lock file (`.terraform.lock.hcl`) committed for reproducibility — anyone else who clones the repo will pin to provider v5.45.2 the same way I am.
 - Updated `.gitignore` to allow committing `.terraform.lock.hcl` — industry practice moved toward committing this file for reproducibility.
+
+**Synthea setup (evening):** Installed OpenJDK 17 (system was on Java 8). Downloaded Synthea 188MB JAR. Smoke test: 1 patient generated successfully — "Kamala553 Conroy74", 21-y/o female from Harvard MA, complete simulated medical history in 2.2MB of FHIR JSON. By default Synthea outputs FHIR only; CSV will need a config flag flip tomorrow before bulk generation.
+
+**Notable:** Java 17 throws a deprecation warning about `sun.reflect` — harmless, Synthea was written for older Java. Each patient generates ~2.2MB of FHIR JSON, so 1k patients ≈ 2GB. CSV output will be much smaller and BigQuery-friendly.
+
