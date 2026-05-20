@@ -107,3 +107,47 @@ Things I didn't expect — also gold.
 
 **Notable:** Java 17 throws a deprecation warning about `sun.reflect` — harmless, Synthea was written for older Java. Each patient generates ~2.2MB of FHIR JSON, so 1k patients ≈ 2GB. CSV output will be much smaller and BigQuery-friendly.
 
+---
+
+## 2026-05-20 — Day 3: Synthetic data exists, code distribution surprises
+
+**What:** Generated 1,125 patients with Synthea. 40k conditions, 65k encounters, 209MB total CSV.
+
+**The surprise:** Synthea outputs SNOMED CT, not ICD-10, and most top codes aren't billable diagnoses at all:
+- 7,844 "Medication review due (situation)" — admin code
+- 2,841 "Full-time employment (finding)" — SDOH
+- 1,114 "Social isolation (finding)" — SDOH
+- Real billable codes (gingivitis, sinusitis, obesity) are further down
+
+**Why it matters:** This isn't a flaw in Synthea — it's accurate to real EHR data. SNOMED has 4 broad categories (situation, finding, disorder, procedure), only `disorder` and `procedure` map cleanly to ICD-10 billing codes. This means the clinical NLP problem has a filtering step built in: the ML pipeline needs to recognize which codes are billable, not just predict any code present in the notes.
+
+**Plan:** Don't try to make Synthea output ICD-10. Instead, map SNOMED → ICD-10 at ingest time using NLM's public mapping table. Codes with no ICD-10 equivalent (most "situation" and many "finding" codes) drop out — exactly what hospital coders do.
+
+**Vocabulary size:** 262 distinct SNOMED codes in this dataset. After ICD-10 filtering tomorrow, expect ~80-150 billable codes — a manageable multi-label problem.
+
+---
+
+## 2026-05-20 — Day 3: Data pipeline complete
+
+**What:** Generated 1,125 synthetic patients with Synthea (config file: CSV exporter on, FHIR off, 6 tables included). Wrote `data/upload_to_gcs.py` to push the timestamped run folder to `gs://medical-coding-ml-9848-data/synthea/v1/`. Wrote `data/bigquery_setup.py` to create 6 external tables in the `medical_coding` BigQuery dataset. First query (top-20 conditions) ran successfully against the data in BigQuery.
+
+**Numbers:**
+- 1,125 patients (asked for 1,000; Synthea generates overflow to compensate for early deaths)
+- 40,071 conditions across 262 distinct SNOMED codes
+- 65,326 encounters
+- 209 MiB total CSV data
+- 38 seconds to upload to GCS
+- BigQuery queries run sub-2-second against external tables
+
+**Why external tables, not native:** External tables query CSV directly from GCS without copying data. Slower per query than native tables but zero BigQuery storage cost and trivial to update — generate `v2/`, repoint table, done. Will switch to native tables when the schema is stable, for query speed during training.
+
+**Two design patterns introduced today:**
+1. **Versioned data paths** (`synthea/v1/`, `synthea/v2/`). Every regeneration gets a new version. Easy rollback, easy A/B between dataset versions.
+2. **Idempotent scripts.** `upload_to_gcs.py` and `bigquery_setup.py` both support being run multiple times safely. `bigquery_setup.py` uses `exists_ok=True`; `upload_to_gcs.py` overwrites existing GCS blobs cleanly. This matters for production-style CI/CD where you can't assume "first run."
+
+**The ICD-10 question.** Synthea outputs SNOMED CT. Configured `exporter.use_icd10_codes = true` but it didn't change the CSV `SYSTEM` column (still SNOMED-CT). Decided to handle SNOMED→ICD-10 mapping at ingest time tomorrow using NLM's public mapping table. This is also the realistic production pattern: EHR systems are SNOMED-native; the billing layer translates to ICD-10. Better story than fighting Synthea's config.
+
+**Top SNOMED codes in our data are revealing:**
+- Most frequent codes are administrative (`Medication review due` 7,844) and social determinants of health (`Full-time employment` 2,841, `Social isolation` 1,114)
+- Actual billable diagnoses (Gingivitis, Viral sinusitis, Obesity) appear further down
+- This is accurate to real EHR data. The ICD-10 mapping step will naturally filter administrative codes since they have no billable equivalent.
