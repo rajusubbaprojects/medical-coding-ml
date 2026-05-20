@@ -151,3 +151,17 @@ Things I didn't expect — also gold.
 - Most frequent codes are administrative (`Medication review due` 7,844) and social determinants of health (`Full-time employment` 2,841, `Social isolation` 1,114)
 - Actual billable diagnoses (Gingivitis, Viral sinusitis, Obesity) appear further down
 - This is accurate to real EHR data. The ICD-10 mapping step will naturally filter administrative codes since they have no billable equivalent.
+
+---
+
+## 2026-05-20 — Portfolio shape decision
+
+**Question that came up today:** Project 1 on AWS wasn't Terraformed. Should I retrofit it?
+
+**Decision:** No. Instead, deliberate split across 4 projects:
+- Projects 1, 4: no Terraform (rapid prototypes, model-focused)
+- Projects 2, 3: with Terraform (production MLOps, infrastructure-focused)
+
+**Why this is stronger than "Terraform everywhere":** Most ML engineers can ship a model OR build production infra, not both. A portfolio showing both modalities — knowing when to reach for IaC and when to ship fast — is more senior-signal than uniform projects. Each project has a role.
+
+**Framing for resume:** Projects 1 and 4 are "rapid prototype" pieces. Projects 2 and 3 are "production MLOps" pieces. Title each accordingly so reviewers see the deliberate split.
