@@ -165,3 +165,37 @@ Things I didn't expect — also gold.
 **Why this is stronger than "Terraform everywhere":** Most ML engineers can ship a model OR build production infra, not both. A portfolio showing both modalities — knowing when to reach for IaC and when to ship fast — is more senior-signal than uniform projects. Each project has a role.
 
 **Framing for resume:** Projects 1 and 4 are "rapid prototype" pieces. Projects 2 and 3 are "production MLOps" pieces. Title each accordingly so reviewers see the deliberate split.
+
+---
+
+---
+
+## 2026-05-21 — Day 4: Adding the ICD-10 mapping layer
+
+**Goal:** Synthea outputs SNOMED CT codes. ML model should predict ICD-10 (what hospitals bill on). Need a SNOMED→ICD-10 mapping layer.
+
+**Tool research:**
+- **UMLS** (NLM) is the authoritative source. Requires manual review, 3 business days.
+- **OHDSI Athena** is the production-grade open alternative. Instant signup, mapping built on top of UMLS + OHDSI curation. Well-respected in clinical research.
+
+**Decision:** Pivot to Athena. Don't wait 3 days. When UMLS approval lands later, we can swap mapping sources — the downstream SQL view is unchanged because the abstraction holds. (Bonus: "I migrated vocabulary sources mid-project without breaking downstream code" is itself a story for the blog.)
+
+**Vocabulary selection:**
+- SNOMED — source (matches what Synthea produces)
+- ICD10CM — target (US clinical modification, NCHS-maintained, what billers use)
+- Skipped: CPT4 (paid AMA license), MedDRA (paid MSSO license); RxNorm/LOINC (not needed for diagnosis prediction)
+- Latest releases used: SNOMED 28-Feb-2025, ICD10CM 30-Sep-2025
+
+**Athena download submitted:** 10:17 AM, PENDING. Expected ~500MB–1GB ZIP containing CONCEPT.csv, CONCEPT_RELATIONSHIP.csv, and ~6 reference tables. Build time 5–30 min.
+
+**Plan when ZIP arrives:**
+1. Extract locally
+2. Upload to GCS at `vocabularies/v1/`
+3. Load into BigQuery as **native tables** (not external — reference data, queried in every training run, deserves columnar storage)
+4. Write SQL view `conditions_billable` joining `conditions` → SNOMED concept → ICD10CM concept
+5. EDA on the billable code distribution
+
+**Architectural rule learned today: native vs external tables.** Synthea data → external (versioned, swappable, regenerated). Vocabulary data → native (stable reference, queried often). Split by access pattern, not by file size.
+
+**Tooling gotcha:** Athena Arachne ≠ Athena vocabularies. Two different OHDSI tools with similar branding. Went to the wrong one first. (`athena.ohdsi.org` is the vocabulary tool, not `arachnenetwork.com`.)
+
