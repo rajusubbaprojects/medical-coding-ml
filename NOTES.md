@@ -199,3 +199,25 @@ Things I didn't expect — also gold.
 
 **Tooling gotcha:** Athena Arachne ≠ Athena vocabularies. Two different OHDSI tools with similar branding. Went to the wrong one first. (`athena.ohdsi.org` is the vocabulary tool, not `arachnenetwork.com`.)
 
+## 2026-05-21 — Day 4 complete: ICD-10 mapping working
+
+**Numbers:**
+- 101,766 billable condition rows (up from 40,071 SNOMED due to 1-to-many fan-out)
+- 1,350 distinct ICD-10 codes (will trim to top 100 for modeling)
+- 1,091 of 1,125 patients have ≥1 billable condition
+
+**Bugs hit and fixed (in order):**
+1. OHDSI exports as TSV but named .csv — needed `field_delimiter="\t"`
+2. Unescaped quotes in concept names — needed `quote_character=""` 
+3. SNOMED concept_codes inferred as INT64 because most are numeric — needed CAST
+4. "Maps to" relationship goes ICD10CM → SNOMED, NOT SNOMED → ICD10CM. Had to use "Mapped from" instead.
+
+**Observations for the blog post:**
+- Top codes are mostly Z-codes (factors influencing health), not primary diagnoses
+- BMI fan-out: one SNOMED code (BMI 30+) maps to 10 Z68.3x codes at identical counts
+- These are real data-quality artifacts that production coding systems wrestle with too
+
+**Decisions deferred to Day 5/6:**
+- How to handle 1-to-many SNOMED→ICD-10 fan-out (deduplicate? all labels?)
+- Z-code filtering (keep or drop for the modeling target?)
+- Top-N code selection for ClinicalBERT classifier (top 100? 200?)
