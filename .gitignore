@@ -53,4 +53,4 @@ mlartifacts/
 # Build artifacts
 build/
 dist/
-*.tar.gz
+*.tar.gzdata/notes_synth/

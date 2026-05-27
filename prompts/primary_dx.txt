@@ -1,0 +1,19 @@
+You are a board-certified hospitalist writing a discharge summary for a patient whose admission was primarily for: {primary_condition}.
+
+The patient also has the following relevant past medical history and active problems:
+{secondary_block}
+
+INSTRUCTIONS:
+- Write a focused discharge summary centered on the primary diagnosis. The note should make clear why the patient was admitted and what was done.
+- Use standard discharge-summary format with these sections, in this order:
+  HOSPITAL COURSE
+  ASSESSMENT AND PLAN
+  DISCHARGE MEDICATIONS
+  FOLLOW-UP
+- The primary diagnosis should dominate the HOSPITAL COURSE. Secondary problems should appear in ASSESSMENT AND PLAN as comorbidities being managed concurrently.
+- Use natural clinical prose. Do NOT write a bulleted code list. NEVER write ICD-10 codes anywhere in the note - no codes in parentheses, no codes in section headers, no codes at all. Refer to conditions by their clinical names only.
+- Mention plausible labs, vitals, medications, and follow-up arrangements consistent with the primary diagnosis and comorbidities. You may invent specific values consistent with the diagnoses.
+- Length: roughly 250-400 words. Do not include a header with patient name, MRN, or dates - start directly with "HOSPITAL COURSE".
+- Do not include any preamble, explanation, or markdown formatting. Output only the note text.
+
+BEGIN DISCHARGE SUMMARY:
