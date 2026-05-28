@@ -54,3 +54,4 @@ mlartifacts/
 build/
 dist/
 *.tar.gzdata/notes_synth/
+models/
