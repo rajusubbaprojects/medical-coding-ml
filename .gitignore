@@ -58,3 +58,5 @@ data/notes_synth/
 models/
 !data/splits/
 !data/splits/**
+!models/thresholds_*.json
+!models/thresholds_*.json

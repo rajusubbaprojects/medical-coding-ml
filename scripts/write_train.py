@@ -1,9 +1,10 @@
 from pathlib import Path
 
-CONTENT = '''"""Train a multi-label baseline classifier on note text.
+CONTENT = '''"""Train a multi-label baseline classifier on the DEV bucket.
 
 Model: TF-IDF (word + char n-grams) -> OneVsRest(LogisticRegression).
-Loads data via load_data; saves bundle (model + vectorizer + labels) to disk.
+Loads dev bucket via load_data; saves bundle (model + vectorizer + labels) to disk.
+Test bucket is held out and never seen here.
 """
 
 from __future__ import annotations
@@ -16,13 +17,12 @@ from pathlib import Path
 from typing import Any
 
 import joblib
-import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.multiclass import OneVsRestClassifier
 from sklearn.pipeline import FeatureUnion, Pipeline
 
-from src.baseline.load_data import load_data, DataSplit
+from src.baseline.load_data import load_data, LoadedBucket
 
 MODELS_DIR = Path("models")
 
@@ -37,12 +37,7 @@ class TrainedBundle:
 
 
 def build_pipeline() -> Pipeline:
-    """TF-IDF features + OneVsRest logistic regression.
-
-    Word n-grams capture phrases ('acute bronchitis').
-    Char n-grams capture morphology + small typos ('bronchit-').
-    Stacked as a FeatureUnion, fed to a one-vs-rest LR head.
-    """
+    """TF-IDF features + OneVsRest logistic regression."""
     word_vec = TfidfVectorizer(
         analyzer="word",
         ngram_range=(1, 2),
@@ -73,22 +68,22 @@ def build_pipeline() -> Pipeline:
 
 
 def train(rollup: str = "3char", *, save: bool = True) -> TrainedBundle:
-    """Fit a baseline classifier on the chosen rollup."""
-    logger.info("Loading data (rollup=%s)", rollup)
-    ds: DataSplit = load_data(rollup=rollup)
-    logger.info("Train: %d notes, %d labels", ds.info["n_train"], ds.info["n_codes_kept"])
+    """Fit a baseline classifier on the dev bucket of the chosen rollup."""
+    logger.info("Loading dev bucket (rollup=%s)", rollup)
+    dev: LoadedBucket = load_data(rollup=rollup, bucket="dev")
+    logger.info("Train: %d notes, %d labels", dev.info["n_notes"], dev.info["n_codes_kept"])
 
     pipeline = build_pipeline()
     t0 = time.time()
-    pipeline.fit(ds.X_train, ds.y_train)
+    pipeline.fit(dev.X, dev.y)
     fit_seconds = time.time() - t0
     logger.info("Trained in %.1fs", fit_seconds)
 
-    info = dict(ds.info)
+    info = dict(dev.info)
     info["fit_seconds"] = fit_seconds
     bundle = TrainedBundle(
         pipeline=pipeline,
-        label_names=ds.label_names,
+        label_names=dev.label_names,
         info=info,
     )
 

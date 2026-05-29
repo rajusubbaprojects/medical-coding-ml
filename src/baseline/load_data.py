@@ -1,24 +1,33 @@
-"""Load notes + labels from BigQuery into train/test splits.
+"""Load notes + labels from BigQuery for a specified bucket.
 
-Three rollup flavors (chosen via param):
-  - "dirty":   raw notes_labels (236 codes, fan-out included)
-  - "3char":   notes_labels_clean_3char (~49 codes, fan-out dedup'd, no Z)
-  - "chapter": notes_labels_clean_chapter (~16 codes, easy-mode)
+Dev/test split lives in data/splits/dev_test_split.json (committed). This
+module reads that file and returns only the notes for the requested bucket.
+
+Three rollup flavors:
+  - "dirty":   raw notes_labels (~150 codes after rare-filter)
+  - "3char":   notes_labels_clean_3char (~36 codes after rare-filter)
+  - "chapter": notes_labels_clean_chapter (~12 codes after rare-filter)
+
+Two buckets:
+  - "dev":  77 notes, used for training + CV. Touch freely.
+  - "test": 19 notes, held out. Touch only for final evaluation.
+  - "all":  both, for analysis only. Do not train on this.
 """
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import numpy as np
 from google.cloud import bigquery
-from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MultiLabelBinarizer
 
 PROJECT = "medical-coding-ml-9848"
 DATASET = "medical_coding"
-
+SPLIT_PATH = Path("data/splits/dev_test_split.json")
 
 _LABEL_QUERIES = {
     "dirty":
@@ -40,107 +49,122 @@ _LABEL_QUERIES = {
 
 
 @dataclass
-class DataSplit:
-    X_train: list[str]
-    X_test: list[str]
-    y_train: np.ndarray
-    y_test: np.ndarray
+class LoadedBucket:
+    X: list[str]
+    y: np.ndarray
     label_names: list[str]
+    note_ids: list[str]
     info: dict[str, Any]
+
+
+def _load_split() -> dict[str, Any]:
+    if not SPLIT_PATH.exists():
+        raise FileNotFoundError(
+            f"Missing split file: {SPLIT_PATH}. "
+            "Run `python scripts/make_split.py` first."
+        )
+    return json.loads(SPLIT_PATH.read_text())
 
 
 def load_data(
     rollup: str = "3char",
     *,
+    bucket: str = "dev",
     min_code_freq: int = 3,
-    test_size: float = 0.2,
-    random_state: int = 42,
-) -> DataSplit:
-    """Return train/test split as a DataSplit.
+) -> LoadedBucket:
+    """Return data for the requested bucket of the dev/test split.
 
     Args:
         rollup:        one of "dirty", "3char", "chapter"
+        bucket:        one of "dev", "test", "all"
         min_code_freq: drop codes appearing in fewer than this many notes
-        test_size:     fraction of notes held out
-        random_state:  for reproducibility
+                       in the DEV bucket (applied uniformly to dev and test
+                       so label vocabulary stays consistent)
     """
     if rollup not in _LABEL_QUERIES:
         raise ValueError(f"Unknown rollup: {rollup!r}")
+    if bucket not in ("dev", "test", "all"):
+        raise ValueError(f"Unknown bucket: {bucket!r}")
+
+    split = _load_split()
+    dev_ids = set(split["dev"])
+    test_ids = set(split["test"])
+    if bucket == "dev":
+        wanted_ids = dev_ids
+    elif bucket == "test":
+        wanted_ids = test_ids
+    else:
+        wanted_ids = dev_ids | test_ids
 
     client = bigquery.Client(project=PROJECT)
 
-    # 1. Pull notes
+    # 1. All notes (we filter to the bucket in Python — small dataset, simple)
     notes_df = client.query(f"""
         SELECT note_id, note_text
         FROM `{PROJECT}.{DATASET}.notes_synth`
     """).to_dataframe()
+    notes_df = notes_df[notes_df["note_id"].isin(wanted_ids)].reset_index(drop=True)
 
-    # 2. Pull labels (chosen flavor)
+    # 2. All labels for the requested rollup
     labels_df = client.query(_LABEL_QUERIES[rollup]).to_dataframe()
 
-    # 3. Drop ultra-rare codes
-    code_counts = labels_df["label_code"].value_counts()
+    # 3. Determine the label vocabulary from DEV ONLY, then apply rare-filter.
+    #    This ensures dev and test share the same label space.
+    dev_labels = labels_df[labels_df["note_id"].isin(dev_ids)]
+    code_counts = dev_labels["label_code"].value_counts()
     keep_codes = set(code_counts[code_counts >= min_code_freq].index)
-    dropped_codes = set(code_counts.index) - keep_codes
-    labels_df = labels_df[labels_df["label_code"].isin(keep_codes)]
+    dropped_rare = set(code_counts.index) - keep_codes
 
-    # 4. Group labels per note (set, to dedupe just in case)
-    per_note_labels = (
+    labels_df = labels_df[
+        labels_df["note_id"].isin(wanted_ids)
+        & labels_df["label_code"].isin(keep_codes)
+    ]
+
+    # 4. Group labels per note
+    per_note = (
         labels_df.groupby("note_id")["label_code"]
         .apply(set)
         .to_dict()
     )
+    notes_df["labels"] = notes_df["note_id"].map(lambda nid: per_note.get(nid, set()))
 
-    # Notes with zero labels after rare-code filter are kept but get empty labels.
-    notes_df["labels"] = notes_df["note_id"].map(
-        lambda nid: per_note_labels.get(nid, set())
-    )
-
-    # 5. Drop notes with zero labels (no signal to learn from)
+    # 5. Drop notes with zero labels (no signal)
     before = len(notes_df)
     notes_df = notes_df[notes_df["labels"].map(len) > 0].reset_index(drop=True)
-    dropped_empty_notes = before - len(notes_df)
+    dropped_empty = before - len(notes_df)
 
-    # 6. Multi-label binarize
-    mlb = MultiLabelBinarizer()
+    # 6. Binarize (fit on a sorted label list so order is deterministic)
+    mlb = MultiLabelBinarizer(classes=sorted(keep_codes))
     y = mlb.fit_transform(notes_df["labels"])
     label_names = list(mlb.classes_)
 
-    # 7. Train/test split
-    X = notes_df["note_text"].tolist()
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=test_size, random_state=random_state
-    )
-
     info = {
         "rollup": rollup,
-        "n_notes_total": len(notes_df),
-        "n_notes_dropped_empty": dropped_empty_notes,
+        "bucket": bucket,
+        "n_notes": len(notes_df),
+        "n_notes_dropped_empty": dropped_empty,
         "n_codes_kept": len(label_names),
-        "n_codes_dropped_rare": len(dropped_codes),
+        "n_codes_dropped_rare": len(dropped_rare),
         "min_code_freq": min_code_freq,
-        "n_train": len(X_train),
-        "n_test": len(X_test),
-        "avg_labels_per_note": float(y.sum(axis=1).mean()),
+        "avg_labels_per_note": float(y.sum(axis=1).mean()) if len(y) else 0.0,
     }
-    return DataSplit(
-        X_train=X_train,
-        X_test=X_test,
-        y_train=y_train,
-        y_test=y_test,
+    return LoadedBucket(
+        X=notes_df["note_text"].tolist(),
+        y=y,
         label_names=label_names,
+        note_ids=notes_df["note_id"].tolist(),
         info=info,
     )
 
 
 def main() -> None:
-    """Smoke test: load all three rollups and print info dicts."""
+    """Smoke test: load all (rollup, bucket) combinations and print info."""
     for rollup in ("dirty", "3char", "chapter"):
-        ds = load_data(rollup=rollup)
-        print(f"\n--- rollup={rollup} ---")
-        for k, v in ds.info.items():
-            print(f"  {k:25s} {v}")
-        print(f"  example labels: {ds.label_names[:6]}{'...' if len(ds.label_names) > 6 else ''}")
+        for bucket in ("dev", "test"):
+            ds = load_data(rollup=rollup, bucket=bucket)
+            print(f"\n--- rollup={rollup} bucket={bucket} ---")
+            for k, v in ds.info.items():
+                print(f"  {k:25s} {v}")
 
 
 if __name__ == "__main__":
