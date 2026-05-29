@@ -53,5 +53,8 @@ mlartifacts/
 # Build artifacts
 build/
 dist/
-*.tar.gzdata/notes_synth/
+*.tar.gz
+data/notes_synth/
 models/
+!data/splits/
+!data/splits/**
