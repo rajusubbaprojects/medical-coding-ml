@@ -1,0 +1,181 @@
+{
+  "rollup": "3char",
+  "default_threshold": 0.5,
+  "best_for_micro_f1": {
+    "threshold": 0.45,
+    "micro_precision": 0.7439446366782007,
+    "micro_recall": 0.7166666666666667,
+    "micro_f1": 0.7300509337860781,
+    "macro_precision": 0.7403486012038644,
+    "macro_recall": 0.6748875751667023,
+    "macro_f1": 0.6951168280985642
+  },
+  "best_for_macro_f1": {
+    "threshold": 0.45,
+    "micro_precision": 0.7439446366782007,
+    "micro_recall": 0.7166666666666667,
+    "micro_f1": 0.7300509337860781,
+    "macro_precision": 0.7403486012038644,
+    "macro_recall": 0.6748875751667023,
+    "macro_f1": 0.6951168280985642
+  },
+  "sweep": [
+    {
+      "threshold": 0.1,
+      "micro_precision": 0.1111111111111111,
+      "micro_recall": 1.0,
+      "micro_f1": 0.2,
+      "macro_precision": 0.11111111111111109,
+      "macro_recall": 1.0,
+      "macro_f1": 0.19158366430641574
+    },
+    {
+      "threshold": 0.15,
+      "micro_precision": 0.1254180602006689,
+      "micro_recall": 1.0,
+      "micro_f1": 0.22288261515601784,
+      "macro_precision": 0.12035758846663747,
+      "macro_recall": 1.0,
+      "macro_f1": 0.20784610820025107
+    },
+    {
+      "threshold": 0.2,
+      "micro_precision": 0.17098445595854922,
+      "micro_recall": 0.99,
+      "micro_f1": 0.2916053019145803,
+      "macro_precision": 0.1653314423716838,
+      "macro_recall": 0.9768518518518517,
+      "macro_f1": 0.2781988004166404
+    },
+    {
+      "threshold": 0.25,
+      "micro_precision": 0.2534364261168385,
+      "micro_recall": 0.9833333333333333,
+      "micro_f1": 0.4030054644808743,
+      "macro_precision": 0.2839916594188723,
+      "macro_recall": 0.9650673400673401,
+      "macro_f1": 0.42636388197716196
+    },
+    {
+      "threshold": 0.3,
+      "micro_precision": 0.3527950310559006,
+      "micro_recall": 0.9466666666666667,
+      "micro_f1": 0.5140271493212669,
+      "macro_precision": 0.40245255469014485,
+      "macro_recall": 0.9147588363105604,
+      "macro_f1": 0.5458251258744133
+    },
+    {
+      "threshold": 0.35,
+      "micro_precision": 0.46471600688468157,
+      "micro_recall": 0.9,
+      "micro_f1": 0.6129398410896708,
+      "macro_precision": 0.5180482126797652,
+      "macro_recall": 0.8716303166163714,
+      "macro_f1": 0.6398047591659128
+    },
+    {
+      "threshold": 0.4,
+      "micro_precision": 0.5961070559610706,
+      "micro_recall": 0.8166666666666667,
+      "micro_f1": 0.6891701828410689,
+      "macro_precision": 0.6349451587327056,
+      "macro_recall": 0.7802237193877838,
+      "macro_f1": 0.6913137401209296
+    },
+    {
+      "threshold": 0.45,
+      "micro_precision": 0.7439446366782007,
+      "micro_recall": 0.7166666666666667,
+      "micro_f1": 0.7300509337860781,
+      "macro_precision": 0.7403486012038644,
+      "macro_recall": 0.6748875751667023,
+      "macro_f1": 0.6951168280985642
+    },
+    {
+      "threshold": 0.5,
+      "micro_precision": 0.8374384236453202,
+      "micro_recall": 0.5666666666666667,
+      "micro_f1": 0.6759443339960238,
+      "macro_precision": 0.6748710010319917,
+      "macro_recall": 0.5090101338402112,
+      "macro_f1": 0.5645364778272659
+    },
+    {
+      "threshold": 0.55,
+      "micro_precision": 0.9230769230769231,
+      "micro_recall": 0.44,
+      "micro_f1": 0.5959367945823928,
+      "macro_precision": 0.6446428571428571,
+      "macro_recall": 0.3840503099869314,
+      "macro_f1": 0.46968738525419923
+    },
+    {
+      "threshold": 0.6,
+      "micro_precision": 0.9622641509433962,
+      "micro_recall": 0.34,
+      "micro_f1": 0.5024630541871922,
+      "macro_precision": 0.6064814814814815,
+      "macro_recall": 0.30115643066670167,
+      "macro_f1": 0.3946950618102058
+    },
+    {
+      "threshold": 0.65,
+      "micro_precision": 0.9852941176470589,
+      "micro_recall": 0.22333333333333333,
+      "micro_f1": 0.3641304347826087,
+      "macro_precision": 0.4907407407407407,
+      "macro_recall": 0.18431184704475692,
+      "macro_f1": 0.25592669392011497
+    },
+    {
+      "threshold": 0.7,
+      "micro_precision": 1.0,
+      "micro_recall": 0.10666666666666667,
+      "micro_f1": 0.1927710843373494,
+      "macro_precision": 0.3333333333333333,
+      "macro_recall": 0.07584716900808856,
+      "macro_f1": 0.11635691894312582
+    },
+    {
+      "threshold": 0.75,
+      "micro_precision": 1.0,
+      "micro_recall": 0.05,
+      "micro_f1": 0.09523809523809523,
+      "macro_precision": 0.1388888888888889,
+      "macro_recall": 0.03675127713920817,
+      "macro_f1": 0.05586851420184754
+    },
+    {
+      "threshold": 0.8,
+      "micro_precision": 1.0,
+      "micro_recall": 0.006666666666666667,
+      "micro_f1": 0.013245033112582781,
+      "macro_precision": 0.027777777777777776,
+      "macro_recall": 0.0019157088122605363,
+      "macro_f1": 0.0035842293906810036
+    },
+    {
+      "threshold": 0.85,
+      "micro_precision": 0.0,
+      "micro_recall": 0.0,
+      "micro_f1": 0.0,
+      "macro_precision": 0.0,
+      "macro_recall": 0.0,
+      "macro_f1": 0.0
+    },
+    {
+      "threshold": 0.9,
+      "micro_precision": 0.0,
+      "micro_recall": 0.0,
+      "micro_f1": 0.0,
+      "macro_precision": 0.0,
+      "macro_recall": 0.0,
+      "macro_f1": 0.0
+    }
+  ],
+  "cv_mean_micro_f1": 0.6772898410152741,
+  "cv_std_micro_f1": 0.032441050767762526,
+  "cv_mean_macro_f1": 0.4825496417163084,
+  "cv_std_macro_f1": 0.03955586015710069
+}
