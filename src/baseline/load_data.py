@@ -1,7 +1,9 @@
 """Load notes + labels from BigQuery for a specified bucket.
 
-Dev/test split lives in data/splits/dev_test_split.json (committed). This
-module reads that file and returns only the notes for the requested bucket.
+Day 8: now picks the LATEST version per (patient_id, strategy) pair so that
+re-generated notes (e.g., with a new prompt version) supersede older ones.
+
+Dev/test split lives in data/splits/dev_test_split.json (committed).
 
 Three rollup flavors:
   - "dirty":   raw notes_labels (~150 codes after rare-filter)
@@ -9,8 +11,8 @@ Three rollup flavors:
   - "chapter": notes_labels_clean_chapter (~12 codes after rare-filter)
 
 Two buckets:
-  - "dev":  77 notes, used for training + CV. Touch freely.
-  - "test": 19 notes, held out. Touch only for final evaluation.
+  - "dev":  used for training + CV. Touch freely.
+  - "test": held out. Touch only for final evaluation.
   - "all":  both, for analysis only. Do not train on this.
 """
 
@@ -29,21 +31,35 @@ PROJECT = "medical-coding-ml-9848"
 DATASET = "medical_coding"
 SPLIT_PATH = Path("data/splits/dev_test_split.json")
 
+# Pull the LATEST note per (patient_id, strategy). This is the canonical
+# query for "current notes" everywhere in the pipeline.
+_LATEST_NOTES_SQL = f"""
+SELECT note_id, note_text, patient_id, strategy, prompt_version
+FROM `{PROJECT}.{DATASET}.notes_synth`
+QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY patient_id, strategy
+    ORDER BY generated_at DESC
+) = 1
+"""
+
 _LABEL_QUERIES = {
     "dirty":
         f"""
-        SELECT note_id, icd10_code AS label_code
-        FROM `{PROJECT}.{DATASET}.notes_labels`
+        SELECT l.note_id, l.icd10_code AS label_code
+        FROM `{PROJECT}.{DATASET}.notes_labels` l
+        JOIN ({_LATEST_NOTES_SQL}) n USING (note_id)
         """,
     "3char":
         f"""
-        SELECT note_id, label_code
-        FROM `{PROJECT}.{DATASET}.notes_labels_clean_3char`
+        SELECT l.note_id, l.label_code
+        FROM `{PROJECT}.{DATASET}.notes_labels_clean_3char` l
+        JOIN ({_LATEST_NOTES_SQL}) n USING (note_id)
         """,
     "chapter":
         f"""
-        SELECT note_id, label_code
-        FROM `{PROJECT}.{DATASET}.notes_labels_clean_chapter`
+        SELECT l.note_id, l.label_code
+        FROM `{PROJECT}.{DATASET}.notes_labels_clean_chapter` l
+        JOIN ({_LATEST_NOTES_SQL}) n USING (note_id)
         """,
 }
 
@@ -66,29 +82,62 @@ def _load_split() -> dict[str, Any]:
     return json.loads(SPLIT_PATH.read_text())
 
 
+def _resolve_split_to_current_notes(split: dict[str, Any],
+                                    note_id_lookup: dict[str, str]) -> dict[str, set[str]]:
+    """Map old note_ids in the split to current note_ids if they were regenerated.
+
+    The split file stores note_ids from the time the split was created. If we
+    regenerated some notes (new run_id, new note_id, same patient + strategy),
+    the split's note_ids would no longer match. We resolve by (patient, strategy)
+    -> current note_id via the lookup.
+    """
+    def _resolve(old_id: str) -> str | None:
+        # note_id format: "<run_id>_<patient_id>_<strategy>"
+        # We rebuild the lookup key from the suffix.
+        parts = old_id.split("_", 1)
+        if len(parts) != 2:
+            return None
+        # parts[1] is "<patient_id>_<strategy>"
+        return note_id_lookup.get(parts[1])
+
+    resolved = {}
+    for bucket in ("dev", "test"):
+        ids = set()
+        for old_id in split[bucket]:
+            new_id = _resolve(old_id)
+            if new_id:
+                ids.add(new_id)
+        resolved[bucket] = ids
+    return resolved
+
+
 def load_data(
     rollup: str = "3char",
     *,
     bucket: str = "dev",
     min_code_freq: int = 3,
 ) -> LoadedBucket:
-    """Return data for the requested bucket of the dev/test split.
-
-    Args:
-        rollup:        one of "dirty", "3char", "chapter"
-        bucket:        one of "dev", "test", "all"
-        min_code_freq: drop codes appearing in fewer than this many notes
-                       in the DEV bucket (applied uniformly to dev and test
-                       so label vocabulary stays consistent)
-    """
+    """Return data for the requested bucket of the dev/test split."""
     if rollup not in _LABEL_QUERIES:
         raise ValueError(f"Unknown rollup: {rollup!r}")
     if bucket not in ("dev", "test", "all"):
         raise ValueError(f"Unknown bucket: {bucket!r}")
 
+    client = bigquery.Client(project=PROJECT)
+
+    # 1. Pull current notes (latest version per patient + strategy)
+    notes_df = client.query(_LATEST_NOTES_SQL).to_dataframe()
+
+    # 2. Build lookup: "<patient_id>_<strategy>" -> current note_id
+    notes_df["lookup_key"] = notes_df["patient_id"] + "_" + notes_df["strategy"]
+    note_id_lookup = dict(zip(notes_df["lookup_key"], notes_df["note_id"]))
+
+    # 3. Resolve the committed split's note_ids to current ones
     split = _load_split()
-    dev_ids = set(split["dev"])
-    test_ids = set(split["test"])
+    resolved = _resolve_split_to_current_notes(split, note_id_lookup)
+    dev_ids = resolved["dev"]
+    test_ids = resolved["test"]
+
     if bucket == "dev":
         wanted_ids = dev_ids
     elif bucket == "test":
@@ -96,20 +145,12 @@ def load_data(
     else:
         wanted_ids = dev_ids | test_ids
 
-    client = bigquery.Client(project=PROJECT)
-
-    # 1. All notes (we filter to the bucket in Python — small dataset, simple)
-    notes_df = client.query(f"""
-        SELECT note_id, note_text
-        FROM `{PROJECT}.{DATASET}.notes_synth`
-    """).to_dataframe()
     notes_df = notes_df[notes_df["note_id"].isin(wanted_ids)].reset_index(drop=True)
 
-    # 2. All labels for the requested rollup
+    # 4. Pull labels (already filtered to current notes by the JOIN in SQL)
     labels_df = client.query(_LABEL_QUERIES[rollup]).to_dataframe()
 
-    # 3. Determine the label vocabulary from DEV ONLY, then apply rare-filter.
-    #    This ensures dev and test share the same label space.
+    # 5. Label vocabulary from DEV ONLY, rare-filter applied uniformly
     dev_labels = labels_df[labels_df["note_id"].isin(dev_ids)]
     code_counts = dev_labels["label_code"].value_counts()
     keep_codes = set(code_counts[code_counts >= min_code_freq].index)
@@ -120,7 +161,7 @@ def load_data(
         & labels_df["label_code"].isin(keep_codes)
     ]
 
-    # 4. Group labels per note
+    # 6. Group labels per note
     per_note = (
         labels_df.groupby("note_id")["label_code"]
         .apply(set)
@@ -128,12 +169,12 @@ def load_data(
     )
     notes_df["labels"] = notes_df["note_id"].map(lambda nid: per_note.get(nid, set()))
 
-    # 5. Drop notes with zero labels (no signal)
+    # 7. Drop notes with zero labels
     before = len(notes_df)
     notes_df = notes_df[notes_df["labels"].map(len) > 0].reset_index(drop=True)
     dropped_empty = before - len(notes_df)
 
-    # 6. Binarize (fit on a sorted label list so order is deterministic)
+    # 8. Binarize
     mlb = MultiLabelBinarizer(classes=sorted(keep_codes))
     y = mlb.fit_transform(notes_df["labels"])
     label_names = list(mlb.classes_)
@@ -158,7 +199,6 @@ def load_data(
 
 
 def main() -> None:
-    """Smoke test: load all (rollup, bucket) combinations and print info."""
     for rollup in ("dirty", "3char", "chapter"):
         for bucket in ("dev", "test"):
             ds = load_data(rollup=rollup, bucket=bucket)
