@@ -1,11 +1,7 @@
 from pathlib import Path
 
-CONTENT = '''"""Evaluate a trained baseline model on the DEV bucket.
-
-NOTE: this evaluates on dev for now (matches Day 6 behavior). The dev bucket
-is what we tune on; final test bucket evaluation happens on Day 11-12 and gets
-its own driver. Day 7 work (CV, thresholds) all happens on the dev bucket.
-"""
+Path("src/baseline/evaluate.py").write_text(
+"""\"\"\"Evaluate a trained baseline model on dev or test bucket.\"\"\"
 
 from __future__ import annotations
 
@@ -14,11 +10,8 @@ import logging
 from typing import Any
 
 import numpy as np
-from sklearn.metrics import (
-    f1_score,
-    hamming_loss,
-    precision_recall_fscore_support,
-)
+from sklearn.metrics import f1_score, hamming_loss, precision_recall_fscore_support
+from sklearn.preprocessing import MultiLabelBinarizer
 
 from src.baseline.load_data import load_data
 from src.baseline.train import load_bundle
@@ -26,37 +19,46 @@ from src.baseline.train import load_bundle
 logger = logging.getLogger(__name__)
 
 
-def evaluate(rollup: str = "3char", *, bucket: str = "dev",
-             top_n_codes: int = 20) -> dict[str, Any]:
-    """Load the trained bundle, predict on the requested bucket, compute metrics."""
+def evaluate(rollup: str = "3char", *, bucket: str = "dev") -> dict[str, Any]:
     ds = load_data(rollup=rollup, bucket=bucket)
     bundle = load_bundle(rollup=rollup)
 
-    assert bundle.label_names == ds.label_names, (
-        "Label order mismatch between training and evaluation. "
-        "Did the data change between runs?"
-    )
+    # Bundle's label vocab is authoritative (built from dev).
+    # Re-binarize so test codes outside dev vocab are dropped,
+    # and dev-only codes absent from test become all-negative columns.
+    if bundle.label_names != ds.label_names:
+        logger.info("Re-binarizing labels against bundle vocab (%d dev codes, %d bucket codes)",
+                    len(bundle.label_names), len(ds.label_names))
+        ds_label_sets = [
+            {ds.label_names[j] for j in range(len(ds.label_names)) if ds.y[i, j] == 1}
+            for i in range(len(ds.X))
+        ]
+        mlb = MultiLabelBinarizer(classes=bundle.label_names)
+        y_true = mlb.fit_transform(ds_label_sets)
+    else:
+        y_true = ds.y
 
+    label_names = bundle.label_names
     y_pred = bundle.pipeline.predict(ds.X)
 
-    micro_f1 = f1_score(ds.y, y_pred, average="micro", zero_division=0)
-    macro_f1 = f1_score(ds.y, y_pred, average="macro", zero_division=0)
-    subset_acc = float((ds.y == y_pred).all(axis=1).mean())
-    hamming = hamming_loss(ds.y, y_pred)
+    micro_f1 = f1_score(y_true, y_pred, average="micro", zero_division=0)
+    macro_f1 = f1_score(y_true, y_pred, average="macro", zero_division=0)
+    subset_acc = float((y_true == y_pred).all(axis=1).mean())
+    hamming = hamming_loss(y_true, y_pred)
 
     p, r, f, support = precision_recall_fscore_support(
-        ds.y, y_pred, average=None, zero_division=0
+        y_true, y_pred, average=None, zero_division=0
     )
     per_code = sorted(
         [
             {
-                "code": ds.label_names[i],
+                "code": label_names[i],
                 "precision": float(p[i]),
                 "recall": float(r[i]),
                 "f1": float(f[i]),
                 "support": int(support[i]),
             }
-            for i in range(len(ds.label_names))
+            for i in range(len(label_names))
         ],
         key=lambda d: (-d["support"], d["code"]),
     )
@@ -65,15 +67,15 @@ def evaluate(rollup: str = "3char", *, bucket: str = "dev",
         "rollup": rollup,
         "bucket": bucket,
         "n_notes": int(len(ds.X)),
-        "n_codes": len(ds.label_names),
+        "n_codes": len(label_names),
         "micro_f1": float(micro_f1),
         "macro_f1": float(macro_f1),
         "subset_accuracy": subset_acc,
         "hamming_loss": float(hamming),
         "per_code": per_code,
-        "_y_true": ds.y,
+        "_y_true": y_true,
         "_y_pred": y_pred,
-        "_label_names": ds.label_names,
+        "_label_names": label_names,
         "_X": ds.X,
     }
 
@@ -120,8 +122,6 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-'''
-
-Path("src/baseline/evaluate.py").write_text(CONTENT)
-print("Wrote src/baseline/evaluate.py")
-print(f"  {len(CONTENT.splitlines())} lines")
+"""
+)
+print("wrote src/baseline/evaluate.py")
