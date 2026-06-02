@@ -2,17 +2,15 @@ from pathlib import Path
 
 CONTENT = '''"""Load notes + labels from BigQuery for a specified bucket.
 
-Day 8: now picks the LATEST version per (patient_id, strategy) pair so that
-re-generated notes (e.g., with a new prompt version) supersede older ones.
-
-Dev/test split lives in data/splits/dev_test_split.json (committed).
+Day 8 fix: split file is now keyed on (patient_id, strategy) pairs instead
+of note_ids, so regenerations don't invalidate it.
 
 Three rollup flavors:
-  - "dirty":   raw notes_labels (~150 codes after rare-filter)
-  - "3char":   notes_labels_clean_3char (~36 codes after rare-filter)
-  - "chapter": notes_labels_clean_chapter (~12 codes after rare-filter)
+  - "dirty":   raw notes_labels (lots of codes; fan-out included)
+  - "3char":   notes_labels_clean_3char (cleanest target)
+  - "chapter": notes_labels_clean_chapter (sanity-check coarsening)
 
-Two buckets:
+Three buckets:
   - "dev":  used for training + CV. Touch freely.
   - "test": held out. Touch only for final evaluation.
   - "all":  both, for analysis only. Do not train on this.
@@ -33,8 +31,7 @@ PROJECT = "medical-coding-ml-9848"
 DATASET = "medical_coding"
 SPLIT_PATH = Path("data/splits/dev_test_split.json")
 
-# Pull the LATEST note per (patient_id, strategy). This is the canonical
-# query for "current notes" everywhere in the pipeline.
+
 _LATEST_NOTES_SQL = f"""
 SELECT note_id, note_text, patient_id, strategy, prompt_version
 FROM `{PROJECT}.{DATASET}.notes_synth`
@@ -75,42 +72,24 @@ class LoadedBucket:
     info: dict[str, Any]
 
 
-def _load_split() -> dict[str, Any]:
+def _pair(patient_id: str, strategy: str) -> str:
+    return f"{patient_id}::{strategy}"
+
+
+def _load_split() -> dict[str, set[str]]:
+    """Return {bucket: set of pairs}. Asserts pairs format."""
     if not SPLIT_PATH.exists():
         raise FileNotFoundError(
             f"Missing split file: {SPLIT_PATH}. "
             "Run `python scripts/make_split.py` first."
         )
-    return json.loads(SPLIT_PATH.read_text())
-
-
-def _resolve_split_to_current_notes(split: dict[str, Any],
-                                    note_id_lookup: dict[str, str]) -> dict[str, set[str]]:
-    """Map old note_ids in the split to current note_ids if they were regenerated.
-
-    The split file stores note_ids from the time the split was created. If we
-    regenerated some notes (new run_id, new note_id, same patient + strategy),
-    the split's note_ids would no longer match. We resolve by (patient, strategy)
-    -> current note_id via the lookup.
-    """
-    def _resolve(old_id: str) -> str | None:
-        # note_id format: "<run_id>_<patient_id>_<strategy>"
-        # We rebuild the lookup key from the suffix.
-        parts = old_id.split("_", 1)
-        if len(parts) != 2:
-            return None
-        # parts[1] is "<patient_id>_<strategy>"
-        return note_id_lookup.get(parts[1])
-
-    resolved = {}
-    for bucket in ("dev", "test"):
-        ids = set()
-        for old_id in split[bucket]:
-            new_id = _resolve(old_id)
-            if new_id:
-                ids.add(new_id)
-        resolved[bucket] = ids
-    return resolved
+    s = json.loads(SPLIT_PATH.read_text())
+    if s.get("format") != "pairs":
+        raise ValueError(
+            f"Split file is not in pairs format (got format={s.get('format')!r}). "
+            "Re-run scripts/make_split.py to migrate."
+        )
+    return {"dev": set(s["dev"]), "test": set(s["test"])}
 
 
 def load_data(
@@ -127,33 +106,36 @@ def load_data(
 
     client = bigquery.Client(project=PROJECT)
 
-    # 1. Pull current notes (latest version per patient + strategy)
+    # 1. Pull current notes
     notes_df = client.query(_LATEST_NOTES_SQL).to_dataframe()
+    notes_df["pair"] = notes_df["patient_id"] + "::" + notes_df["strategy"]
 
-    # 2. Build lookup: "<patient_id>_<strategy>" -> current note_id
-    notes_df["lookup_key"] = notes_df["patient_id"] + "_" + notes_df["strategy"]
-    note_id_lookup = dict(zip(notes_df["lookup_key"], notes_df["note_id"]))
-
-    # 3. Resolve the committed split's note_ids to current ones
+    # 2. Resolve split to current note_ids via pairs
     split = _load_split()
-    resolved = _resolve_split_to_current_notes(split, note_id_lookup)
-    dev_ids = resolved["dev"]
-    test_ids = resolved["test"]
+    dev_pairs = split["dev"]
+    test_pairs = split["test"]
 
     if bucket == "dev":
-        wanted_ids = dev_ids
+        wanted_pairs = dev_pairs
     elif bucket == "test":
-        wanted_ids = test_ids
+        wanted_pairs = test_pairs
     else:
-        wanted_ids = dev_ids | test_ids
+        wanted_pairs = dev_pairs | test_pairs
 
-    notes_df = notes_df[notes_df["note_id"].isin(wanted_ids)].reset_index(drop=True)
+    notes_df = notes_df[notes_df["pair"].isin(wanted_pairs)].reset_index(drop=True)
+    wanted_ids = set(notes_df["note_id"])
 
-    # 4. Pull labels (already filtered to current notes by the JOIN in SQL)
+    # 3. Pull labels (already filtered to current notes by SQL JOIN)
     labels_df = client.query(_LABEL_QUERIES[rollup]).to_dataframe()
 
-    # 5. Label vocabulary from DEV ONLY, rare-filter applied uniformly
-    dev_labels = labels_df[labels_df["note_id"].isin(dev_ids)]
+    # 4. Label vocabulary determined from DEV only
+    pair_to_nid = dict(zip(notes_df["pair"], notes_df["note_id"]))  # current bucket only
+    # We need ALL dev pairs' note_ids for vocab, not just current bucket. Re-query.
+    all_notes = client.query(_LATEST_NOTES_SQL).to_dataframe()
+    all_notes["pair"] = all_notes["patient_id"] + "::" + all_notes["strategy"]
+    dev_note_ids = set(all_notes[all_notes["pair"].isin(dev_pairs)]["note_id"])
+
+    dev_labels = labels_df[labels_df["note_id"].isin(dev_note_ids)]
     code_counts = dev_labels["label_code"].value_counts()
     keep_codes = set(code_counts[code_counts >= min_code_freq].index)
     dropped_rare = set(code_counts.index) - keep_codes
@@ -163,7 +145,7 @@ def load_data(
         & labels_df["label_code"].isin(keep_codes)
     ]
 
-    # 6. Group labels per note
+    # 5. Group labels per note
     per_note = (
         labels_df.groupby("note_id")["label_code"]
         .apply(set)
@@ -171,12 +153,12 @@ def load_data(
     )
     notes_df["labels"] = notes_df["note_id"].map(lambda nid: per_note.get(nid, set()))
 
-    # 7. Drop notes with zero labels
+    # 6. Drop notes with zero labels
     before = len(notes_df)
     notes_df = notes_df[notes_df["labels"].map(len) > 0].reset_index(drop=True)
     dropped_empty = before - len(notes_df)
 
-    # 8. Binarize
+    # 7. Binarize
     mlb = MultiLabelBinarizer(classes=sorted(keep_codes))
     y = mlb.fit_transform(notes_df["labels"])
     label_names = list(mlb.classes_)
