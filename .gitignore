@@ -61,3 +61,6 @@ data/notes_synth/
 # Models: ignore artifacts, allowlist threshold/metadata JSONs
 models/*
 !models/*.json
+
+# OOF predictions (large, regenerable)
+data/oof/
