@@ -1,151 +1,158 @@
-# Medical Coding ML System
+# Medical Coding ML
 
-An end-to-end MLOps system that suggests ICD-10 and CPT codes from clinical notes, deployed on GCP. Built to compare three modeling approaches (fine-tuned ClinicalBERT, RAG over code descriptions, and a hybrid retrieval + ranker) and serve the best one with canary deploys, drift detection, and automated retraining.
+An end-to-end ML pipeline for automated ICD-10 code prediction from clinical
+discharge notes, built as part of a healthcare AI portfolio.
 
-**Data:** Uses [Synthea](https://github.com/synthetichealth/synthea) (MITRE's open-source synthetic patient generator) to produce realistic clinical data without PHI. Free-text notes are synthesized from Synthea's structured output using an LLM, with the original ICD-10 codes preserved as ground-truth labels. The system is designed to swap in real EHR data (e.g., MIMIC-IV) via configuration; only the ingestion layer changes.
+> **Note**: This is a research/portfolio project using synthetic data.
+> It is not a clinically deployable system.
+
+---
+
+## Results
+
+| Dataset | Notes (dev) | Codes | Micro F1 (CV) | Test F1 |
+|---------|-------------|-------|---------------|---------|
+| Patient-grouped | 779 | 94 | 0.821 ± 0.019 | **0.826** |
+| Encounter-grouped | 1,581 | 74 | 0.972 ± 0.005 | **0.981** |
+
+Both test numbers are from held-out sets touched exactly once, after all
+training and tuning decisions were finalized on the dev set.
+
+---
 
 ## Architecture
+Synthea synthetic EHR (BigQuery)
+|
+v
+conditions_billable view (Z-codes filtered)
+|
+v
+Gemini 2.5 Flash (Vertex AI) -- generates discharge notes from code lists
+|
+v
+notes_synth + notes_labels (BigQuery)
+|
+v
+TF-IDF (word 1-2gram + char_wb 3-5gram)
 
-```
-Synthea (synthetic patients)
-        ↓
-LLM note synthesis (Vertex AI)
-        ↓
-   GCS bucket → BigQuery → Vertex AI Feature Store
-                              ↓
-                    Vertex AI Pipelines
-                    ├── ClinicalBERT (fine-tune)
-                    ├── RAG (frontier LLM + code embeddings)
-                    └── Hybrid (retrieval + cross-encoder)
-                              ↓
-                       MLflow tracking
-                              ↓
-                    Vertex AI Model Registry
-                              ↓
-              Artifact Registry (container images)
-                              ↓
-                  Cloud Run (FastAPI, canary split)
-                              ↓
-        Cloud Monitoring ← logs, latency, errors
-                  ↓
-       Vertex AI Model Monitoring (drift)
-                  ↓
-       Cloud Function → triggers retraining
-```
+OneVsRest LogisticRegression
+|
+v
+Multi-label ICD-10 classifier
 
-## Status
 
-| Component | State |
-|---|---|
-| GCP project + APIs | ✅ |
-| Terraform skeleton | 🔄 |
-| Synthea data generation | ⬜ |
-| LLM note synthesis | ⬜ |
-| BigQuery schema | ⬜ |
-| Approach 1: ClinicalBERT | ⬜ |
-| Approach 2: RAG | ⬜ |
-| Approach 3: Hybrid | ⬜ |
-| FastAPI + Cloud Run | ⬜ |
-| Canary deploys | ⬜ |
-| Drift detection | ⬜ |
-| Retraining trigger | ⬜ |
-| CI/CD (GitHub Actions) | ⬜ |
-| Blog post | ⬜ |
+Two dataset strategies:
+- **Patient-grouped**: one note per patient, lifetime conditions (4.2 codes/note avg)
+- **Encounter-grouped**: one note per clinical visit (1.6 codes/note avg, more realistic)
 
-## Quickstart
+---
+
+## Key engineering decisions
+
+**Why TF-IDF + Logistic Regression (not BERT)?**
+Per-code F1 analysis showed failures were support-driven — codes with fewer
+than 10 training examples scored near zero regardless of model complexity.
+The bottleneck was data, not representation. Transformer baseline deferred
+until after data expansion.
+
+**Why encounter-grouped notes?**
+Patient-grouped notes bundle a lifetime of conditions into one note, creating
+an artificially hard multi-label problem. Switching to encounter-grouped
+generation doubled dataset size, raised per-code support for rare conditions,
+and improved macro F1 from 0.619 to 0.895.
+
+**Why synthetic data?**
+Real clinical notes require IRB approval and data use agreements. Synthea +
+Gemini gives a complete, reproducible pipeline that demonstrates the full ML
+engineering workflow without privacy concerns.
+
+---
+
+## Honest caveats
+
+1. **Synthetic notes are easy for TF-IDF.** Gemini writes "admitted with
+   acute bronchitis" which maps trivially to J20. Real clinical notes use
+   abbreviations, negation, copy-paste boilerplate, and implicit diagnoses.
+   Production performance would be significantly lower.
+
+2. **Synthea has a narrow condition distribution.** Some ICD-10 codes
+   (F32 depression, G44 headache, R11 nausea) appear in fewer than 10
+   encounters in the synthetic population and remain unlearnable.
+
+3. **The encounter model solves an easier task.** 1.6 codes/note vs 4.2
+   means fewer predictions per note. The micro F1 improvement reflects
+   both better data and a simpler target distribution.
+
+---
+
+## How to run
 
 ### Prerequisites
-
-- Google Cloud SDK (`gcloud`) authenticated
-- Terraform >= 1.5
 - Python 3.11
-- Docker
-- Java 11+ (for running Synthea)
-
-### Setup
+- GCP project with BigQuery and Vertex AI enabled
+- `gcloud auth application-default login`
 
 ```bash
-# 1. Configure
-cp .env.example .env
-# Edit .env with your PROJECT_ID, REGION, etc.
-
-# 2. Provision infra
-cd terraform
-terraform init
-terraform apply
-
-# 3. Generate synthetic data
-cd ../data/synthea
-./run_synthea -p 1000   # 1000 synthetic patients
-
-# 4. Synthesize free-text notes and load to BigQuery
-python data/ingest.py --source synthea --output gs://${DATA_BUCKET}/notes/
-
-# 5. Run a training pipeline
-python training/pipelines/vertex_pipeline.py --approach clinicalbert
-
-# 6. Local serving for testing
-cd serving && docker build -t medical-coding-api . && docker run -p 8080:8080 medical-coding-api
+git clone https://github.com/rajusubbaprojects/medical-coding-ml
+cd medical-coding-ml
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
 ```
 
-## Three approaches: why and how
+### Demo
+```bash
+# Predict from a note file
+python -m src.demo.predict note.txt
 
-This project deliberately compares three modeling strategies. The blog post writes itself from the comparison.
+# Use patient-grouped model
+python -m src.demo.predict note.txt --model patient
 
-**Approach 1 — Fine-tuned ClinicalBERT.** Multi-label classifier on the top 100-500 most common codes. Cheap inference (~50ms), but limited code coverage and no native explainability.
+# Lower confidence threshold
+python -m src.demo.predict note.txt --threshold 0.3
 
-**Approach 2 — RAG with frontier LLM.** Embed official ICD-10/CPT code descriptions, retrieve top candidates for each note, have the LLM pick and rank with cited reasoning. Covers the full code set, explainable, but pricier and slower (~1-3s per note).
-
-**Approach 3 — Hybrid retrieval + ranker.** Retrieval narrows ~80k codes to ~20 candidates, then a fine-tuned cross-encoder ranks them. Best of both: low latency, full code coverage, retrieval traces give explainability.
-
-The serving layer ships the winner. The comparison itself is the blog post.
-
-## Data: why synthetic, not real
-
-Real clinical notes (e.g., MIMIC-IV) require institutional credentialing and weeks of approval, and any work with them comes with PHI-handling constraints that complicate having a public portfolio repo. For a portfolio project, Synthea is a better fit:
-
-- **No PHI** — repo, notebooks, sample outputs are all safe to publish
-- **Fast iteration** — generate 1k or 100k patients in minutes
-- **Ground-truth labels** — Synthea attaches real ICD-10 codes to every condition
-- **Realistic distributions** — patients have demographically and epidemiologically grounded conditions and care pathways
-
-The data ingestion layer is designed as a swappable adapter. To switch to MIMIC-IV or any real EHR source later, only the ingestion code changes; downstream training, serving, and evaluation remain identical.
-
-See `docs/data-access.md` for the full data pipeline.
-
-## Project layout
-
-```
-medical-coding-ml/
-├── README.md
-├── NOTES.md                    # running log of decisions, blockers, lessons
-├── .github/workflows/          # CI and deploy pipelines
-├── terraform/                  # infrastructure as code
-├── data/
-│   ├── schemas/                # BigQuery table schemas
-│   └── synthea/                # Synthea config and run scripts
-├── notebooks/                  # EDA, evaluation, ad-hoc analysis
-├── training/
-│   ├── approach_1_clinicalbert/
-│   ├── approach_2_rag/
-│   ├── approach_3_hybrid/
-│   └── pipelines/              # Vertex AI Pipelines DSL
-├── serving/                    # FastAPI app + Dockerfile
-├── monitoring/                 # drift detection + Cloud Monitoring dashboards
-├── tests/                      # pytest suite
-└── docs/                       # architecture and how-to docs
+# Read from stdin
+echo "Patient admitted with acute bronchitis..." | python -m src.demo.predict -
 ```
 
-## Tech stack
+### Retrain and evaluate
+```bash
+python -m src.baseline.train --rollup 3char
+python -m src.baseline.run_encounter_cv
+python -m src.baseline.evaluate --rollup 3char --bucket test
+python -m src.baseline.per_code_analysis --min-support 10
+```
 
-- **Cloud**: Google Cloud Platform (Vertex AI, BigQuery, Cloud Run, Artifact Registry, Cloud Monitoring, Cloud Functions)
-- **IaC**: Terraform
-- **CI/CD**: GitHub Actions with Workload Identity Federation
-- **Serving**: FastAPI, Docker, Cloud Run with canary traffic splits
-- **ML**: PyTorch, Transformers (ClinicalBERT), sentence-transformers (embeddings), scikit-learn
-- **Experiment tracking**: MLflow on Cloud Run
-- **Data**: Synthea, BigQuery, GCS
+---
 
-## Disclaimer
+## Findings log
 
-This is a portfolio project, not a clinical tool. The model outputs are not validated for clinical use. All data used is synthetic and contains no real patient information.
+| Day | Work | Headline |
+|-----|------|----------|
+| 5 | LLM note synthesis | 100 notes, $0.18 |
+| 6 | First baseline | Micro F1 0.685 |
+| 7 | Stratified CV | 0.677 +/- 0.032 |
+| 8 | Scale to 1,000 notes | 0.821 +/- 0.019 |
+| 9 | Per-code F1 analysis | Failure is support-driven |
+| 10 | Patient test eval | 0.826 held-out |
+| 11 | 2,000 encounter notes | 0.972 +/- 0.005 |
+| 12 | Encounter test eval | 0.981 held-out |
+| 13 | CLI demo + README | python -m src.demo.predict |
+
+---
+
+## Infrastructure
+
+- **Cloud**: GCP (BigQuery + Vertex AI)
+- **LLM**: Gemini 2.5 Flash (~$3.50 per 2,000 notes)
+- **ML**: scikit-learn (TF-IDF, LogisticRegression, MultiLabelBinarizer)
+- **Data**: Synthea 1,000-patient synthetic EHR dataset
+- **Versioning**: GitHub + joblib model bundles
+
+---
+
+## What is next
+
+- Transformer baseline (DistilBERT vs TF-IDF) on encounter dataset
+- Streamlit demo app
+- Real clinical note evaluation (MIMIC-III)
+- Blog post: From Synthea to ICD-10: Building a Medical Coding ML Pipeline
