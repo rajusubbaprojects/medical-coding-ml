@@ -1,0 +1,101 @@
+code_3char,description
+A37,Whooping cough due to other Bordetella species with pneumonia
+A41,Other sepsis
+A50,Early congenital syphilitic pneumonia
+C18,Malignant neoplasm of overlapping sites of colon
+C92,Acute myeloblastic leukemia
+D07,Carcinoma in situ of prostate
+D64,"Anemia, unspecified"
+E08,Diabetes mellitus due to underlying condition with diabetic nephropathy
+E09,Drug or chemical induced diabetes mellitus with diabetic chronic kidney disease
+E11,Type 2 diabetes mellitus
+E13,Other specified diabetes mellitus with diabetic chronic kidney disease
+E78,"Hyperlipidemia, unspecified"
+E88,Metabolic syndrome and other insulin resistance
+F11,Opioid abuse
+F32,"Major depressive disorder, single episode, unspecified"
+F43,Post-traumatic stress disorder (PTSD)
+G30,Alzheimer's disease
+G40,Epilepsy and recurrent seizures
+G43,"Chronic migraine without aura, intractable"
+G44,Complicated headache syndromes
+G47,Obstructive sleep apnea (adult) (pediatric)
+G89,"Chronic pain, not elsewhere classified"
+H66,"Otitis media, unspecified"
+H67,Otitis media in diseases classified elsewhere
+I10,Essential (primary) hypertension
+I20,Unstable angina
+I21,Myocardial infarction with coronary microvascular dysfunction
+I25,Atherosclerosis of autologous artery coronary artery bypass graft(s) with unstable angina pectoris
+I34,Nonrheumatic mitral (valve) insufficiency
+I35,Nonrheumatic aortic (valve) insufficiency
+I48,Unspecified atrial fibrillation
+I50,Chronic systolic (congestive) heart failure
+J02,Streptococcal pharyngitis
+J16,"Pneumonia due to other infectious organisms, not elsewhere classified"
+J17,Pneumonia in diseases classified elsewhere
+J18,"Other pneumonia, unspecified organism"
+J20,Acute bronchitis
+J30,Other seasonal allergic rhinitis
+J32,Chronic sinusitis
+J43,Emphysema
+J45,Asthma
+J80,Acute respiratory distress syndrome
+K06,"Disorder of gingiva and edentulous alveolar ridge, unspecified"
+K36,Other appendicitis
+K37,Unspecified appendicitis
+K63,Polyp of colon
+K80,Calculus of gallbladder without cholecystitis with obstruction
+K81,Acute cholecystitis
+L20,Atopic dermatitis
+L25,Unspecified contact dermatitis
+M05,Rheumatoid heart disease with rheumatoid arthritis of unspecified site
+M06,"Other specified rheumatoid arthritis, multiple sites"
+M10,Gout
+M16,Osteoarthritis of hip
+M17,Osteoarthritis of knee
+M19,"Primary osteoarthritis, hand"
+M1A,Chronic gout
+M25,Pain in joint
+M27,Alveolitis of jaws
+M41,Adolescent idiopathic scoliosis
+M79,Fibromyalgia
+M80,"Age-related osteoporosis with current pathological fracture, left forearm, subsequent encounter for fracture with malunion"
+M81,Age-related osteoporosis without current pathological fracture
+M84,"Nontraumatic fracture, not elsewhere classified"
+M94,"Chondromalacia, unspecified knee"
+M96,"Fracture of radius or ulna following insertion of orthopedic implant, joint prosthesis, or bone plate"
+M97,Periprosthetic fracture around internal prosthetic ankle joint
+N18,"Chronic kidney disease, stage 1"
+O00,Left tubal pregnancy without intrauterine pregnancy
+O14,Mild to moderate pre-eclampsia
+O15,Eclampsia complicating pregnancy
+Q51,Other congenital malformations of uterus
+R05,Cough
+R06,Dyspnea
+R09,Nasal congestion
+R11,Nausea
+R50,Fever of other and unknown origin
+R51,Headache
+R53,Other fatigue
+R57,Other shock
+R65,Severe sepsis with septic shock
+R68,Chills (without fever)
+R73,Elevated blood glucose level
+R93,Abnormal findings on diagnostic imaging of heart and coronary circulation
+S02,"Fracture of angle of mandible, subsequent encounter for fracture with delayed healing"
+S06,Concussion
+S19,Other specified and unspecified injuries of neck
+S35,"Laceration of other blood vessels at abdomen, lower back and pelvis level, initial encounter"
+S42,Fracture of clavicle
+S45,"Laceration of other specified blood vessels at shoulder and upper arm level, right arm"
+S46,Other injury of muscle(s) and tendon(s) of the rotator cuff of shoulder
+S51,"Laceration without foreign body of left forearm, initial encounter"
+S52,Fracture of forearm
+S55,"Laceration of other blood vessels at forearm level, left arm, subsequent encounter"
+S56,"Laceration of extensor muscle, fascia and tendon of left middle finger at forearm level, initial encounter"
+S61,Laceration with foreign body of left hand
+S63,Other and unspecified sprain of wrist
+S65,Laceration of blood vessel of left little finger
+S66,"Laceration of other specified muscles, fascia and tendons at wrist and hand level, left hand, subsequent encounter"
+S71,"Laceration without foreign body, left thigh"
