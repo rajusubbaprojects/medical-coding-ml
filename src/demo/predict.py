@@ -1,0 +1,136 @@
+"""CLI demo: predict ICD-10 codes from a discharge note.
+
+Usage:
+    python -m demo.predict note.txt
+    python -m demo.predict note.txt --model encounter
+    python -m demo.predict note.txt --model patient
+    echo "65yo male with chest pain..." | python -m demo.predict -
+"""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import sys
+from pathlib import Path
+
+import joblib
+import numpy as np
+
+MODELS_DIR = Path("models")
+DATA_DIR = Path("data")
+DESCRIPTIONS_PATH = DATA_DIR / "icd10_3char_descriptions.csv"
+
+MODEL_BUNDLES = {
+    "encounter": "baseline_encounter.joblib",
+    "patient":   "baseline_3char.joblib",
+}
+
+
+def load_descriptions() -> dict[str, str]:
+    """Load ICD-10 3-char code -> description mapping."""
+    if not DESCRIPTIONS_PATH.exists():
+        return {}
+    with open(DESCRIPTIONS_PATH) as f:
+        reader = csv.DictReader(f)
+        return {row["code_3char"]: row["description"] for row in reader}
+
+
+def predict(note_text: str, model_name: str = "encounter",
+            threshold: float = 0.5) -> list[dict]:
+    """Return predicted codes with confidence scores.
+
+    Returns list of dicts sorted by confidence descending:
+        [{"code": "J20", "confidence": 0.94, "description": "Acute bronchitis"}, ...]
+    """
+    bundle_path = MODELS_DIR / MODEL_BUNDLES[model_name]
+    if not bundle_path.exists():
+        raise FileNotFoundError(
+            f"Model bundle not found: {bundle_path}. "
+            f"Run the appropriate train script first."
+        )
+
+    bundle = joblib.load(bundle_path)
+    pipe = bundle["pipeline"]
+    label_names = bundle["label_names"]
+    descriptions = load_descriptions()
+
+    proba = pipe.predict_proba([note_text])[0]
+
+    results = []
+    for code, prob in zip(label_names, proba):
+        if prob >= threshold:
+            results.append({
+                "code": code,
+                "confidence": round(float(prob), 4),
+                "description": descriptions.get(code, "—"),
+            })
+
+    return sorted(results, key=lambda x: -x["confidence"])
+
+
+def print_predictions(predictions: list[dict], note_text: str,
+                      model_name: str, source: str) -> None:
+    n_chars = len(note_text)
+    bundle = joblib.load(MODELS_DIR / MODEL_BUNDLES[model_name])
+    n_codes = len(bundle["label_names"])
+
+    print(f"\n=== ICD-10 Predictions ===")
+    print(f"  Model  : {model_name} (TF-IDF + LogisticRegression, {n_codes} codes)")
+    print(f"  Input  : {source} ({n_chars:,} chars)")
+    print()
+
+    if not predictions:
+        print("  No codes predicted above threshold.")
+        return
+
+    col_w = max(len(p["description"]) for p in predictions)
+    col_w = min(col_w, 55)
+    print(f"  {'Code':<6}  {'Confidence':>10}  Description")
+    print(f"  {'─'*6}  {'─'*10}  {'─'*col_w}")
+    for p in predictions:
+        desc = p["description"][:col_w]
+        print(f"  {p['code']:<6}  {p['confidence']:>10.4f}  {desc}")
+    print()
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Predict ICD-10 codes from a discharge note."
+    )
+    parser.add_argument(
+        "note",
+        help="Path to a text file containing the note, or - to read from stdin"
+    )
+    parser.add_argument(
+        "--model", choices=["encounter", "patient"], default="encounter",
+        help="Which model bundle to use (default: encounter)"
+    )
+    parser.add_argument(
+        "--threshold", type=float, default=0.5,
+        help="Confidence threshold for predictions (default: 0.5)"
+    )
+    args = parser.parse_args()
+
+    if args.note == "-":
+        note_text = sys.stdin.read()
+        source = "stdin"
+    else:
+        path = Path(args.note)
+        if not path.exists():
+            print(f"Error: file not found: {path}", file=sys.stderr)
+            sys.exit(1)
+        note_text = path.read_text()
+        source = str(path)
+
+    note_text = note_text.strip()
+    if not note_text:
+        print("Error: empty note.", file=sys.stderr)
+        sys.exit(1)
+
+    predictions = predict(note_text, model_name=args.model, threshold=args.threshold)
+    print_predictions(predictions, note_text, args.model, source)
+
+
+if __name__ == "__main__":
+    main()
