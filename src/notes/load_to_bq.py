@@ -40,6 +40,7 @@ NOTES_SCHEMA = [
     bigquery.SchemaField("note_text", "STRING", mode="REQUIRED"),
     bigquery.SchemaField("labels", "STRING", mode="REPEATED"),
     bigquery.SchemaField("primary_code", "STRING", mode="NULLABLE"),
+    bigquery.SchemaField("encounter_id", "STRING", mode="NULLABLE"),
     bigquery.SchemaField("input_tokens", "INT64", mode="NULLABLE"),
     bigquery.SchemaField("output_tokens", "INT64", mode="NULLABLE"),
     bigquery.SchemaField("finish_reason", "STRING", mode="NULLABLE"),

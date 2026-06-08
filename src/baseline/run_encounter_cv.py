@@ -1,0 +1,93 @@
+"""Run CV on encounter-grouped notes and save OOF predictions."""
+
+from __future__ import annotations
+
+import argparse
+import logging
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+from iterstrat.ml_stratifiers import MultilabelStratifiedKFold
+from sklearn.metrics import f1_score
+
+from src.baseline.load_encounter_data import load_encounter_data
+from src.baseline.train import build_pipeline
+
+logger = logging.getLogger(__name__)
+OOF_DIR = Path("data/oof")
+
+
+def run(n_folds: int = 5, seed: int = 42) -> None:
+    logger.info("Loading encounter dev bucket...")
+    dev = load_encounter_data(bucket="dev")
+    X = np.asarray(dev.X, dtype=object)
+    y = dev.y
+    label_names = dev.label_names
+    logger.info("Dev: %d notes, %d codes, %.2f avg labels/note",
+                dev.info["n_notes"], dev.info["n_codes_kept"],
+                dev.info["avg_labels_per_note"])
+
+    mskf = MultilabelStratifiedKFold(n_splits=n_folds, shuffle=True, random_state=seed)
+    oof_pred = np.zeros_like(y)
+    oof_proba = np.zeros(y.shape, dtype=float)
+    per_fold = []
+
+    for fold_idx, (train_idx, val_idx) in enumerate(mskf.split(X, y), start=1):
+        logger.info("fold %d/%d: train=%d val=%d", fold_idx, n_folds, len(train_idx), len(val_idx))
+        pipe = build_pipeline()
+        pipe.fit(X[train_idx].tolist(), y[train_idx])
+        oof_pred[val_idx] = pipe.predict(X[val_idx].tolist())
+        oof_proba[val_idx] = pipe.predict_proba(X[val_idx].tolist())
+        micro = f1_score(y[val_idx], oof_pred[val_idx], average="micro", zero_division=0)
+        macro = f1_score(y[val_idx], oof_pred[val_idx], average="macro", zero_division=0)
+        per_fold.append({"fold": fold_idx, "micro_f1": micro, "macro_f1": macro,
+                         "n_train": len(train_idx), "n_val": len(val_idx)})
+        logger.info("  micro_f1=%.3f macro_f1=%.3f", micro, macro)
+
+    micros = np.array([f["micro_f1"] for f in per_fold])
+    macros = np.array([f["macro_f1"] for f in per_fold])
+
+    print(f"\n=== Encounter CV: k={n_folds} ===")
+    print(f"  {'fold':>4s} {'n_train':>8s} {'n_val':>6s} {'micro_f1':>9s} {'macro_f1':>9s}")
+    for f in per_fold:
+        print(f"  {f['fold']:>4d} {f['n_train']:>8d} {f['n_val']:>6d} "
+              f"{f['micro_f1']:>9.3f} {f['macro_f1']:>9.3f}")
+    print(f"\n  mean micro F1: {micros.mean():.3f} +/- {micros.std():.3f}")
+    print(f"  mean macro F1: {macros.mean():.3f} +/- {macros.std():.3f}")
+
+    oof_micro = f1_score(y, oof_pred, average="micro", zero_division=0)
+    oof_macro = f1_score(y, oof_pred, average="macro", zero_division=0)
+    print(f"\n  OOF micro F1: {oof_micro:.3f}")
+    print(f"  OOF macro F1: {oof_macro:.3f}")
+
+    # Save OOF predictions
+    OOF_DIR.mkdir(parents=True, exist_ok=True)
+    rows = []
+    for note_idx in range(len(X)):
+        for code_idx, code_name in enumerate(label_names):
+            rows.append({
+                "note_idx": note_idx,
+                "code": code_name,
+                "y_true": int(y[note_idx, code_idx]),
+                "y_pred": int(oof_pred[note_idx, code_idx]),
+                "y_proba": float(oof_proba[note_idx, code_idx]),
+            })
+    df = pd.DataFrame(rows)
+    out_path = OOF_DIR / "oof_encounter_3char.csv"
+    df.to_csv(out_path, index=False)
+    logger.info("Saved OOF: %s (%d rows)", out_path, len(df))
+    print(f"\nOOF CSV written to {out_path}")
+
+
+def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--k", type=int, default=5)
+    parser.add_argument("--seed", type=int, default=42)
+    args = parser.parse_args()
+    run(n_folds=args.k, seed=args.seed)
+
+
+if __name__ == "__main__":
+    main()
