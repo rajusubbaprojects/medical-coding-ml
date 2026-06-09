@@ -13,7 +13,6 @@ on:
 env:
   PROJECT_ID: medical-coding-ml-9848
   REGION: us-central1
-  REPOSITORY: medical-coding-ml
   SERVICE: medical-coding-ml-api
   IMAGE: us-central1-docker.pkg.dev/medical-coding-ml-9848/medical-coding-ml/api
 
@@ -33,6 +32,13 @@ jobs:
 
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
+
+      - name: Download models from GCS
+        run: |
+          mkdir -p models
+          gsutil cp gs://medical-coding-ml-models/models/baseline_encounter.joblib models/
+          gsutil cp gs://medical-coding-ml-models/models/baseline_3char.joblib models/
+          ls -lh models/
 
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
